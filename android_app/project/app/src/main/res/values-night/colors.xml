@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- brand: brighter teal reads better on dark surfaces -->
+    <color name="teal">#5AD1D1</color>
+    <color name="teal_container">#0C3A3A</color>
+    <color name="on_teal_container">#B6E9EC</color>
+    <color name="white">#FFFFFF</color>
+
+    <!-- status accents (dark) -->
+    <color name="ok_bg">#173322</color>
+    <color name="ok_fg">#84D9A0</color>
+    <color name="err_bg">#3A1D1D</color>
+    <color name="err_fg">#F2A6A6</color>
+    <color name="neutral_bg">#26292C</color>
+    <color name="neutral_fg">#B7C0C7</color>
+
+    <!-- selectable row -->
+    <color name="row_bg">#2A2D30</color>
+    <color name="row_sel">#123F3B</color>
+    <color name="row_sel_text">#7FE0D6</color>
+</resources>

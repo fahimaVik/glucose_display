@@ -1358,10 +1358,11 @@ void loop() {
 
         // Between polls: keep the age line honest, drive the urgent blink, and
         // stay responsive to the button. refresh() returns early when nothing
-        // has actually changed, so polling it this often is cheap.
+        // has actually changed, so polling it this often is cheap. Skip it when
+        // unprovisioned so a stale reading cannot repaint over the setup screen.
         checkButton();
         checkTouch();
-        if (lastReading.valid) refresh(lastReading);
+        if (nsConfigured() && lastReading.valid) refresh(lastReading);
 
         delay(20);
         return;

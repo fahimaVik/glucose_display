@@ -8,7 +8,7 @@
         android:allowBackup="true"
         android:label="Glucose WiFi"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.DayNight"
+        android:theme="@style/Theme.GlucoseWiFi"
         android:usesCleartextTraffic="true">
 
         <!-- usesCleartextTraffic is required: the device speaks plain http on

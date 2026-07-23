@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GlucoseWiFi" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/teal</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimaryContainer">@color/teal_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_teal_container</item>
+    </style>
+</resources>

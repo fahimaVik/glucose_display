@@ -1,111 +1,235 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="20dp">
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="20dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Glucose display WiFi"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:paddingBottom="12dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Device address" />
-
-        <EditText
-            android:id="@+id/addr"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="192.168.4.1"
-            android:inputType="text" />
-
-        <Button
-            android:id="@+id/refresh"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Refresh" />
-
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="—"
-            android:textStyle="bold"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Saved networks (history)"
-            android:textSize="16sp"
-            android:textStyle="bold"
+        <TextView android:id="@+id/title"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Glucose Display"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
             android:paddingTop="8dp" />
 
-        <LinearLayout
-            android:id="@+id/savedList"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingBottom="12dp" />
+        <TextView android:id="@+id/subtitle"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="" android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:paddingBottom="18dp" />
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#CCCCCC"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="12dp" />
+        <!-- ================= HOME ================= -->
+        <LinearLayout android:id="@+id/stepHome"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Add a network"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp" app:cardElevation="0dp"
+                app:strokeWidth="1dp" app:strokeColor="?attr/colorOutlineVariant">
+                <TextView android:id="@+id/homeStatus"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Checking device…"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:padding="18dp" />
+            </com.google.android.material.card.MaterialCardView>
 
-        <EditText
-            android:id="@+id/ssid"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Network name (SSID)"
-            android:inputType="text" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/homeSetup"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" android:text="Set up / reconfigure" />
 
-        <EditText
-            android:id="@+id/pass"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Password"
-            android:inputType="textPassword" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/homeRefresh"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Refresh" />
+        </LinearLayout>
 
-        <CheckBox
-            android:id="@+id/showPass"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Show password" />
+        <!-- ================= NIGHTSCOUT ================= -->
+        <LinearLayout android:id="@+id/stepNs"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:visibility="gone">
 
-        <Button
-            android:id="@+id/save"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Save and connect" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Step 1 of 4 · Your Nightscout"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorPrimary" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Do this on your normal internet, before joining the display."
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" android:paddingBottom="14dp" />
 
-        <TextView
-            android:id="@+id/log"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:paddingTop="12dp"
-            android:textColor="#666666" />
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:hint="Nightscout site URL">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/nsUrl"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="textUri" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:hint="Access token">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/nsToken"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView android:id="@+id/nsHelp"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Token: in Nightscout open the menu, then Admin Tools, then Subjects, add one with the readable role and copy its token. You can also paste a full URL that already contains ?token=…"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:paddingTop="6dp" android:paddingBottom="8dp" />
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/nsOpen"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Open my Nightscout ↗" />
+
+            <com.google.android.material.card.MaterialCardView android:id="@+id/nsResultCard"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:visibility="gone"
+                app:cardCornerRadius="14dp" app:cardElevation="0dp">
+                <TextView android:id="@+id/nsResult"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="" android:padding="14dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/nsCheck"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:text="Check" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/nsNext"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Next" android:enabled="false" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/nsBack"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Back" />
+        </LinearLayout>
+
+        <!-- ================= CONNECT ================= -->
+        <LinearLayout android:id="@+id/stepConnect"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:visibility="gone">
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Step 2 of 4 · Connect to the display"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorPrimary" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Join the Wi-Fi network GlucoseSetup on your phone and turn mobile data OFF, then find the device."
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" android:paddingBottom="14dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:hint="Device address">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/deviceAddr"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="192.168.4.1" android:inputType="text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.card.MaterialCardView android:id="@+id/connectStatusCard"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:visibility="gone"
+                app:cardCornerRadius="14dp" app:cardElevation="0dp">
+                <TextView android:id="@+id/connectStatus"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="" android:padding="14dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/connectFind"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:text="Find device" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/connectNext"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Next" android:enabled="false" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/connectBack"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Back" />
+        </LinearLayout>
+
+        <!-- ================= WIFI ================= -->
+        <LinearLayout android:id="@+id/stepWifi"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:visibility="gone">
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Step 3 of 4 · The display's Wi-Fi"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorPrimary" android:paddingBottom="8dp" />
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/wifiScan"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Scan networks the display can see" />
+
+            <LinearLayout android:id="@+id/wifiList"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:paddingTop="6dp" android:paddingBottom="6dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                app:passwordToggleEnabled="true" android:hint="Wi-Fi password">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/wifiPass"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="textPassword" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/wifiSend"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" android:text="Send setup" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/wifiBack"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Back" />
+        </LinearLayout>
+
+        <!-- ================= SENDING ================= -->
+        <LinearLayout android:id="@+id/stepSending"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:gravity="center" android:visibility="gone">
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:indeterminate="true" android:layout_marginTop="36dp"
+                android:layout_marginBottom="18dp" />
+            <TextView android:id="@+id/sendStatus"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Sending setup to the display…" android:gravity="center"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+        </LinearLayout>
+
+        <!-- ================= DONE ================= -->
+        <LinearLayout android:id="@+id/stepDone"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:gravity="center" android:visibility="gone">
+
+            <TextView android:id="@+id/doneStatus"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="" android:gravity="center" android:padding="20dp"
+                android:textAppearance="?attr/textAppearanceTitleMedium" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/doneHome"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Done" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/log"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="" android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="?attr/textAppearanceBodySmall" android:paddingTop="20dp" />
 
     </LinearLayout>
 </ScrollView>
