@@ -1,11 +1,11 @@
 .pio
 include/config.h
 
-# Android app build artifacts and machine-specific files
+# Android app build artifacts and machine-specific files. The prebuilt
+# GlucoseWiFi.apk at android_app/ is intentionally tracked for downloads.
 android_app/**/build/
 android_app/**/.gradle/
 android_app/**/local.properties
-android_app/*.apk
 
 
 .vscode/.browse.c_cpp.db*
