@@ -26,7 +26,7 @@ reflashing to change networks.
 - [Software](#software)
   - [Libraries](#libraries-auto-installed-from-platformioini)
   - [TFT_eSPI config gotcha](#tft_espi-is-configured-in-platformioini-not-user_setuph)
-  - [Secrets: include/config.h](#secrets-includeconfigh)
+  - [Settings: include/config.h](#settings-includeconfigh)
 - [Project structure](#project-structure)
 - [Bring-up](#bring-up)
   - [Flash it](#1-flash-it)
@@ -35,8 +35,8 @@ reflashing to change networks.
 - [Using it](#using-it)
   - [Controls](#controls)
   - [Powering it standalone](#powering-it-standalone)
-- [Changing WiFi from your phone](#changing-wifi-from-your-phone)
-  - [Flow](#flow)
+- [Setup from the phone app](#setup-from-the-phone-app)
+  - [The setup wizard](#the-setup-wizard)
   - [The Android app](#the-android-app)
   - [HTTP API](#http-api)
 - [Security notes](#security-notes)
@@ -226,10 +226,19 @@ build_flags =
     -DSPI_FREQUENCY=40000000
 ```
 
-### Secrets: `include/config.h`
+### Settings: `include/config.h`
 
-Copy the defines and fill in your own values. **This file is `.gitignore`d** so
-your WiFi password and Nightscout token never reach version control.
+These values only **seed** the device on its first boot. After that, everything
+(WiFi networks, Nightscout URL and token, units, thresholds) lives in flash and
+is set from the phone app, so there are two ways to use this file:
+
+- **Personal build:** fill in your WiFi and Nightscout and the device comes up
+  ready to go.
+- **Generic build to hand out:** leave `WIFI_*` and `NS_*` empty; the device
+  boots straight into setup mode and is configured entirely from the app.
+
+**This file is `.gitignore`d** so your WiFi password and Nightscout token never
+reach version control.
 
 ```c
 #define WIFI_SSID     "your-wifi"      // seeds the network list on first boot only
@@ -267,10 +276,7 @@ glucose_display/
 │   └── main.cpp            # firmware: display, touch, Nightscout, WiFi provisioning
 └── android_app/
     ├── README.md           # how to build/install the app
-    ├── MainActivity.kt     # app source (copy targets)
-    ├── activity_main.xml
-    ├── AndroidManifest.xml
-    └── project/            # ready-to-build Gradle project (build output gitignored)
+    └── project/            # the Android setup app (Gradle project; build output gitignored)
 ```
 
 ---
@@ -345,44 +351,62 @@ DevKit USB port, never both.
 
 ---
 
-## Changing WiFi from your phone
+## Setup from the phone app
 
-WiFi credentials are **not** hardcoded (after the first-boot seed). The device
-keeps a list of up to 8 networks in flash (its history), tries them
-newest-first on boot, and if none are reachable it starts its own **setup
-hotspot**.
+After the first-boot seed nothing is hardcoded: the WiFi networks (up to 8, kept
+newest-first as a history), the Nightscout URL and token, units, and thresholds
+all live in flash and are set from the **Glucose WiFi** Android app. A device
+with no configuration boots into **setup mode** and starts its own hotspot,
+`GlucoseSetup`.
 
-### Flow
+### The setup wizard
 
-1. When no saved network is found, the display shows **Setup mode** and starts
-   the hotspot **`GlucoseSetup`** (password: the one you set as `AP_PASSWORD`).
-2. On your phone, join that hotspot, and **turn mobile data off** (a no-internet
-   hotspot otherwise gets bypassed over cellular, the most common gotcha).
-3. Open the **Glucose WiFi** app (or a browser at `http://192.168.4.1`), and add
-   your network. The device stores it, joins it, and the display returns.
+1. **Nightscout** (phone on its normal internet): enter your site URL and a
+   read-only token. The app validates them against `status.json` and pulls your
+   units and target range automatically, so you never type thresholds.
+2. **Connect**: one tap joins the device's `GlucoseSetup` hotspot
+   (`WifiNetworkSpecifier`, Android 10+), with a manual "join in WiFi settings"
+   fallback for older or restrictive phones.
+3. **WiFi**: the app lists the networks the *device* can see; tap yours and enter
+   its password in the popup.
+4. The app sends everything in one request. The device joins WiFi, checks
+   Nightscout, and the display comes to life.
 
-When the device is online on your WiFi it's also reachable at
-`http://glucose.local` (mDNS) or its IP.
+To reconfigure a working device later, the app puts it back into setup mode
+(`POST /api/reconfigure`).
 
 ### The Android app
 
-Source and a build/usage guide are in [`android_app/`](android_app/). It's a
-small native Kotlin app: see saved networks, add one, delete one. It can be
-built and installed entirely from the command line against an existing Android
-Studio SDK/JDK (`gradle assembleDebug`, then `adb install`), no IDE session
-required. See [`android_app/README.md`](android_app/README.md).
+A native Kotlin app (Material 3, dark-mode aware) in
+[`android_app/project/`](android_app/project/), a ready-to-build Gradle project.
+Build and install from the command line against an existing Android Studio
+SDK/JDK, no IDE session needed:
+
+```bash
+cd android_app/project
+gradle assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+See [`android_app/README.md`](android_app/README.md).
 
 ### HTTP API
 
-Plain JSON, served in both setup-hotspot and normal modes. Passwords are sent to
-the device but never returned.
+Plain JSON, served in both setup-hotspot and normal modes. The Nightscout token
+is stored but never returned.
 
 | Method | Path | Body / query | Purpose |
 |---|---|---|---|
-| `GET` | `/api/networks` | - | status + saved SSIDs (history) |
-| `POST` | `/api/networks` | `{"ssid","pass"}` | add a network and try to join |
-| `DELETE` | `/api/networks` | `?ssid=NAME` | forget a network |
+| `GET` | `/api/status` | - | connection state, provisioned?, last reading, thresholds |
+| `POST` | `/api/provision` | `{wifi_ssid, wifi_pass, ns_url, ns_token, units, thresholds}` | one-shot setup (accepted in setup mode only) |
+| `POST` | `/api/reconfigure` | - | clear Nightscout config, return to setup mode |
 | `GET` | `/api/scan` | - | nearby SSIDs |
+| `GET` | `/api/networks` | - | saved SSIDs (history) |
+| `POST` | `/api/networks` | `{"ssid","pass"}` | add a network |
+| `DELETE` | `/api/networks` | `?ssid=NAME` | forget a network |
+
+When the device is online on your WiFi it's also reachable at
+`http://glucose.local` (mDNS) or its IP.
 
 ---
 

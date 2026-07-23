@@ -1,85 +1,60 @@
-# Glucose display WiFi — Android app
+# Glucose Display: Android setup app
 
-A small app to manage the WiFi networks your glucose display remembers: see the
-saved list (its history), add a new network, and delete old ones. It talks to
-the device's HTTP API — the same `http://192.168.4.1/api/networks` you tested in
-a browser.
+The phone app that sets up the glucose display: validate your Nightscout, join
+the device's setup hotspot with one tap, pick the WiFi it should use, and send
+it all in one go. Material 3, dark-mode aware. It talks to the device's HTTP API
+(see the main README for the endpoints).
 
-There is no APK here, only source. You build it once in Android Studio (free)
-and install it on your phone. These files are not a full project on their own —
-you create an empty project and drop them in.
+`project/` is a complete, ready-to-build Gradle project (not loose files to drop
+into a new project). Build it however you prefer.
 
-## What you need
+## Build and install (command line)
 
-- **Android Studio** (free): https://developer.android.com/studio
-- A USB cable, or wireless debugging, to put the app on your phone
+Needs a Java 17+ JDK and the Android SDK (both ship with Android Studio; you do
+not need to open the IDE). Point `JAVA_HOME` at a JDK and `sdk.dir` at your SDK
+(`project/local.properties`), then:
 
-## Build steps
+```bash
+cd project
+gradle assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
-1. **New project** → **Empty Views Activity** (the plain one, *not* "Empty
-   Activity" which is Compose). Then:
-   - **Name:** Glucose WiFi
-   - **Package name:** `com.example.glucosewifi`  ← use exactly this, it must
-     match the first line of `MainActivity.kt`
-   - **Language:** Kotlin
-   - **Minimum SDK:** API 24 or higher
-   - Finish, and let Gradle sync (first time takes a few minutes).
+The first build downloads the Android Gradle Plugin and Material dependency, so
+it needs internet once. `local.properties` and the build output are gitignored.
 
-2. **Replace three files** with the ones in this folder. In Android Studio's
-   Project view (top-left dropdown set to "Android"):
+## Or in Android Studio
 
-   | This file | Goes to |
-   |---|---|
-   | `MainActivity.kt` | `app/java/com.example.glucosewifi/MainActivity.kt` |
-   | `activity_main.xml` | `app/res/layout/activity_main.xml` |
-   | `AndroidManifest.xml` | `app/manifests/AndroidManifest.xml` |
-
-   Open each file in this folder, copy all of it, and paste over the whole
-   contents of the matching file in Android Studio.
-
-3. **Run it.** Plug your phone in (with USB debugging enabled — search "enable
-   USB debugging android" if you have not before), pick it in the device
-   dropdown at the top, and press the green ▶ Run button. The app installs and
-   opens on your phone.
-
-   After the first install you can unplug and launch it like any app.
+Open the `project/` folder directly (File, Open). Let Gradle sync, plug in your
+phone with USB debugging on, and press Run.
 
 ## Using it
 
-The app reaches the device two ways:
+1. **Nightscout** (phone on normal internet): enter your site URL and a
+   read-only access token, tap **Check**. The app confirms the token reads
+   glucose and pulls your units and target range from the site. Get a token from
+   Nightscout: menu, Admin Tools, Subjects, add one with the `readable` role.
+2. **Connect**: enter the setup hotspot password and tap **Connect to
+   GlucoseSetup** (Android shows a one-time "Connect?" prompt). Or join
+   `GlucoseSetup` manually in WiFi settings and use the manual **Find device**.
+3. **WiFi**: tap **Scan**, tap your network, enter its password in the popup.
+4. **Send setup**. The device joins WiFi, checks Nightscout, and the display
+   comes to life. The phone's WiFi returns to normal on its own.
 
-- **Setup mode** — when the device cannot join any saved network it makes its
-  own hotspot `GlucoseSetup` (password: whatever you set as `AP_PASSWORD`). Join that hotspot on your
-  phone, leave the address field as `192.168.4.1`, and use the app.
-- **Normal mode** — when the device is online on your WiFi, join that same WiFi
-  on your phone. You would then put the device's IP (shown in the app when it is
-  online) in the address field instead of `192.168.4.1`.
+The home screen shows the device's live status, and **Set up / reconfigure**
+re-runs the wizard on a device already in setup mode.
 
-To add a network: type its name and password, tap **Save and connect**. The
-device stores it and tries to join. If it succeeds, the display comes back to
-life on the new network.
+### If the app cannot reach the device (manual mode)
 
-### Important: turn mobile data OFF
+On the `GlucoseSetup` hotspot the phone has no internet, so Android may route app
+traffic over mobile data instead. If **Find device** fails, turn **mobile data
+off**. The one-tap **Connect to GlucoseSetup** avoids this by binding device
+requests to the hotspot directly.
 
-When your phone is on the `GlucoseSetup` hotspot it has no internet, so Android
-tends to send app traffic over mobile data instead — and the device is not
-reachable that way. **Toggle mobile data off** while using the app in setup mode.
-This is the single most common reason the app "cannot reach the device". This is
-the same thing you did to make it work in the browser.
+## Notes
 
-## How it works
-
-The device keeps its network list (newest first, up to 8) in its own flash
-memory, so the history lives on the device and survives being unplugged — the
-app reads and edits that list rather than holding the only copy. Passwords are
-sent to the device but never sent back: the app can show which networks are
-saved, but not their passwords.
-
-## Notes and limits
-
-- The API is unauthenticated. Anyone on the `GlucoseSetup` hotspot (which is
-  WPA2-protected) or on your home WiFi could change the device's networks. For a
-  personal device on your own network this is usually fine; if you want it
-  locked down, that is a good follow-up.
-- The hotspot name and password are set in the firmware's `config.h`
-  (`AP_SSID` / `AP_PASSWORD`) — change them there and reflash if you like.
+- The device API is unauthenticated. Anyone on the WPA2-protected setup hotspot,
+  or on your home WiFi, could reconfigure the device. Fine for a personal device
+  on a home network; a shared device token is the natural way to lock it down.
+- The setup hotspot name and password come from the firmware's `config.h`
+  (`AP_SSID` / `AP_PASSWORD`).
