@@ -33,6 +33,63 @@ reflashing to change networks.
 
 ---
 
+## Prerequisites: a Nightscout server
+
+This display is a *client*. It never talks to the CGM directly; it reads from a
+[Nightscout](https://nightscout.github.io/) instance, a self-hosted web app that
+stores your glucose data and exposes a REST API. You need one running before the
+device is useful.
+
+The data pipeline this project was built around:
+
+```
+Dexcom G6 transmitter
+  -> phone (Dexcom G6 app, unchanged)
+  -> Dexcom Share (cloud)
+  -> Nightscout's built-in bridge (polls Share every ~5 min)
+  -> Nightscout on Northflank  <->  MongoDB Atlas (storage)
+  -> this display reads /api/v1/entries.json over HTTPS
+```
+
+### How it was set up
+
+Hosting options and free tiers change often, so treat the official docs as
+canonical and the details below as "what worked in mid-2026". Official guide:
+https://nightscout.github.io/
+
+1. **Dexcom Share follower account.** In the Dexcom G6 app: Settings → Share →
+   turn on → invite a follower (a `you+nightscout@gmail.com` alias works fine),
+   then open the invite email and create a Dexcom *Follow* account with a
+   username and password. Those become `BRIDGE_USER_NAME` / `BRIDGE_PASSWORD`
+   below. Use the follower account, never your main Dexcom login, so a leak can
+   only expose data, not change your account.
+2. **Database: MongoDB Atlas free tier.** Create an account, a project, and an
+   **M0 free** cluster (AWS, a region near you, e.g. Frankfurt `eu-central-1`).
+   Add a database user (autogenerate the password and save it), allow access
+   under Network Access, and copy the connection string. It becomes Nightscout's
+   `MONGO_CONNECTION`, with your database name appended (e.g. `.../nightscout`).
+3. **Deploy Nightscout.** Fork `nightscout/cgm-remote-monitor` on GitHub and
+   deploy it on **Northflank** (its free tier hosts Nightscout). Set these
+   environment variables:
+   - `API_SECRET`: a 12+ character passphrase (the admin password)
+   - `MONGO_CONNECTION`: the Atlas connection string from step 2
+   - `BRIDGE_USER_NAME`, `BRIDGE_PASSWORD`: the Dexcom follower credentials
+   - `BRIDGE_SERVER=EU`: required outside the US, otherwise the bridge polls the
+     US Share server and finds nothing
+   - plus display settings such as `DISPLAY_UNITS` (`mg/dl` or `mmol`)
+4. **Verify.** Open your Northflank Nightscout URL in a browser; readings should
+   start appearing within a few minutes.
+
+### The token this project needs
+
+Once Nightscout is up, create a **read-only** access token for the display:
+*Admin Tools → Subjects → add a subject with the `readable` role*. Its token is
+what goes in `NS_TOKEN` in [`include/config.h`](include/config.h). Don't use
+`API_SECRET` for the device; a read-only token can't modify your data and is
+revocable on its own.
+
+---
+
 ## Hardware
 
 ### Bill of materials
