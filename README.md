@@ -11,6 +11,40 @@ reflashing to change networks.
 
 ---
 
+## Contents
+
+- [What it shows](#what-it-shows)
+- [Prerequisites: a Nightscout server](#prerequisites-a-nightscout-server)
+  - [How it was set up](#how-it-was-set-up)
+  - [The token this project needs](#the-token-this-project-needs)
+- [Hardware](#hardware)
+  - [Bill of materials](#bill-of-materials)
+  - [Two board quirks that cost hours](#two-board-quirks-that-cost-hours-read-these-first)
+- [Wiring](#wiring)
+  - [Display → ESP32](#display--esp32)
+  - [Touch → ESP32](#touch--esp32-separate-bus)
+- [Software](#software)
+  - [Libraries](#libraries-auto-installed-from-platformioini)
+  - [TFT_eSPI config gotcha](#tft_espi-is-configured-in-platformioini-not-user_setuph)
+  - [Secrets: include/config.h](#secrets-includeconfigh)
+- [Project structure](#project-structure)
+- [Bring-up](#bring-up)
+  - [Flash it](#1-flash-it)
+  - [Verify the wiring with a colour test](#2-verify-the-wiring-with-a-colour-test-recommended-for-a-fresh-build)
+  - [First real boot: touch calibration](#3-first-real-boot-touch-calibration)
+- [Using it](#using-it)
+  - [Controls](#controls)
+  - [Powering it standalone](#powering-it-standalone)
+- [Changing WiFi from your phone](#changing-wifi-from-your-phone)
+  - [Flow](#flow)
+  - [The Android app](#the-android-app)
+  - [HTTP API](#http-api)
+- [Security notes](#security-notes)
+- [Troubleshooting](#troubleshooting)
+- [Credits](#credits)
+
+---
+
 ## What it shows
 
 - **Large glucose value**, colour-coded green / amber / red by range
@@ -101,7 +135,7 @@ revocable on its own.
 | **AZDelivery jumper wires** (M2M / F2M / F2F, 20 cm), [link](https://amzn.eu/d/0io5VrWr) | Female-to-female connect the display header to the ESP32 header |
 | USB-C cable + any 5V USB charger | For power / flashing |
 
-### ⚠️ Two board quirks that cost hours. Read these first.
+### Two board quirks that cost hours. Read these first.
 
 1. **Power the board, and flash it, through the _DevKit's own USB-C port_** (the
    one on the small upper board, between the `EN` and `BOOT` buttons). The
@@ -172,7 +206,7 @@ Built with [PlatformIO](https://platformio.org/) (VS Code extension). Board
 - `PaulStoffregen/XPT2046_Touchscreen` (from GitHub, **not** the registry copy;
   the registry snapshot predates the custom-SPI-bus support this project needs)
 
-### ⚠️ TFT_eSPI is configured in `platformio.ini`, not `User_Setup.h`
+### TFT_eSPI is configured in `platformio.ini`, not `User_Setup.h`
 
 This is the single most common way to get a **blank screen that still compiles
 cleanly**. TFT_eSPI only reads a `User_Setup.h` if `USER_SETUP_LOADED` is
@@ -219,6 +253,25 @@ your WiFi password and Nightscout token never reach version control.
 **Get a read-only Nightscout token** from *Admin Tools → Subjects*: add a
 subject with the `readable` role and use its token. Do **not** use your
 `API_SECRET`; a read-only token is revocable and can't write to your data.
+
+---
+
+## Project structure
+
+```
+glucose_display/
+├── platformio.ini          # board, libraries, TFT_eSPI display config
+├── include/
+│   └── config.h            # secrets + thresholds (gitignored)
+├── src/
+│   └── main.cpp            # firmware: display, touch, Nightscout, WiFi provisioning
+└── android_app/
+    ├── README.md           # how to build/install the app
+    ├── MainActivity.kt     # app source (copy targets)
+    ├── activity_main.xml
+    ├── AndroidManifest.xml
+    └── project/            # ready-to-build Gradle project (build output gitignored)
+```
 
 ---
 
@@ -348,25 +401,6 @@ the device but never returned.
   Nightscout token are compiled into the firmware image in plaintext, so physical
   possession of the board exposes them. Treat a lost device accordingly
   (rotate the token, which is why it's read-only and revocable).
-
----
-
-## Project structure
-
-```
-glucose_display/
-├── platformio.ini          # board, libraries, TFT_eSPI display config
-├── include/
-│   └── config.h            # secrets + thresholds (gitignored)
-├── src/
-│   └── main.cpp            # firmware: display, touch, Nightscout, WiFi provisioning
-└── android_app/
-    ├── README.md           # how to build/install the app
-    ├── MainActivity.kt     # app source (copy targets)
-    ├── activity_main.xml
-    ├── AndroidManifest.xml
-    └── project/            # ready-to-build Gradle project (build output gitignored)
-```
 
 ---
 
