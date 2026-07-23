@@ -379,8 +379,14 @@ To reconfigure a working device later, the app puts it back into setup mode
 
 A native Kotlin app (Material 3, dark-mode aware) in
 [`android_app/project/`](android_app/project/), a ready-to-build Gradle project.
-Build and install from the command line against an existing Android Studio
-SDK/JDK, no IDE session needed:
+
+**Just want to install it?** Download the prebuilt app:
+[**GlucoseWiFi.apk**](https://github.com/fahimaVik/glucose_display/raw/main/android_app/GlucoseWiFi.apk).
+Open it on your phone and allow "install from unknown apps" when prompted (it is
+a normal sideloaded app, not from the Play Store).
+
+**Want to build it yourself?** From the command line against an existing Android
+Studio SDK/JDK, no IDE session needed:
 
 ```bash
 cd android_app/project
