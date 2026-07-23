@@ -2,6 +2,8 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <SPI.h>
@@ -830,30 +832,291 @@ static void showFetchError(FetchResult r) {
     }
 }
 
-static void connectWiFi() {
+// ---- saved networks -----------------------------------------------------
+// The list is the device's WiFi history: every network that has been added
+// from the phone app, newest first. It is stored in NVS as a JSON array under
+// one key, and seeded once from config.h so an out-of-the-box device still
+// comes up on the main network.
 
-    showMessage("Connecting WiFi", WIFI_SSID, C_LABEL);
+static const int    MAX_NETS = 8;
+static const size_t NET_JSON_CAP = 1024;
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+static String netSsid[MAX_NETS];
+static String netPass[MAX_NETS];
+static int    netCount = 0;
 
-    const uint32_t deadline = millis() + 20000;
+static WebServer server(80);
+static bool      apActive  = false;
+static bool      mdnsUp    = false;
 
+static void saveNets() {
+
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+
+    for (int i = 0; i < netCount; i++) {
+        JsonObject o = arr.add<JsonObject>();
+        o["s"] = netSsid[i];
+        o["p"] = netPass[i];
+    }
+
+    String out;
+    serializeJson(doc, out);
+    prefs.putString("netlist", out);
+}
+
+static void loadNets() {
+
+    netCount = 0;
+
+    String raw = prefs.getString("netlist", "");
+
+    if (raw.length()) {
+        JsonDocument doc;
+        if (deserializeJson(doc, raw) == DeserializationError::Ok) {
+            for (JsonObject o : doc.as<JsonArray>()) {
+                if (netCount >= MAX_NETS) break;
+                netSsid[netCount] = o["s"].as<const char *>() ?: "";
+                netPass[netCount] = o["p"].as<const char *>() ?: "";
+                if (netSsid[netCount].length()) netCount++;
+            }
+        }
+    }
+
+    // First run: seed from config.h so the device is not dead on arrival.
+    if (netCount == 0 && strlen(WIFI_SSID)) {
+        netSsid[0] = WIFI_SSID;
+        netPass[0] = WIFI_PASSWORD;
+        netCount   = 1;
+        saveNets();
+        Serial.println("seeded network list from config.h");
+    }
+
+    Serial.printf("saved networks: %d\n", netCount);
+}
+
+// Newest first: a re-added network moves to the front, which is also the order
+// connection is attempted in, so the most recently chosen wins ties.
+static void addNet(const String &ssid, const String &pass) {
+
+    if (!ssid.length()) return;
+
+    int found = -1;
+    for (int i = 0; i < netCount; i++)
+        if (netSsid[i] == ssid) { found = i; break; }
+
+    if (found < 0) {
+        if (netCount == MAX_NETS) netCount--;     // drop the oldest
+        found = netCount++;
+    }
+
+    for (int i = found; i > 0; i--) {
+        netSsid[i] = netSsid[i - 1];
+        netPass[i] = netPass[i - 1];
+    }
+
+    netSsid[0] = ssid;
+    netPass[0] = pass;
+
+    saveNets();
+    Serial.printf("network saved: %s (%d total)\n", ssid.c_str(), netCount);
+}
+
+static bool removeNet(const String &ssid) {
+
+    for (int i = 0; i < netCount; i++) {
+        if (netSsid[i] == ssid) {
+            for (int j = i; j < netCount - 1; j++) {
+                netSsid[j] = netSsid[j + 1];
+                netPass[j] = netPass[j + 1];
+            }
+            netCount--;
+            saveNets();
+            Serial.printf("network removed: %s\n", ssid.c_str());
+            return true;
+        }
+    }
+    return false;
+}
+
+// ---- connection ---------------------------------------------------------
+
+static bool tryConnect(const String &ssid, const String &pass, uint32_t ms) {
+
+    Serial.printf("trying '%s' ", ssid.c_str());
+
+    WiFi.begin(ssid.c_str(), pass.c_str());
+
+    const uint32_t deadline = millis() + ms;
     while (WiFi.status() != WL_CONNECTED && millis() < deadline) {
-        delay(250);
+        delay(200);
         Serial.print(".");
     }
-    Serial.println();
+    Serial.printf(" status=%d\n", WiFi.status());
 
-    if (WiFi.status() != WL_CONNECTED) {
-        showMessage("WiFi failed", "retrying...", C_URGENT);
+    return WiFi.status() == WL_CONNECTED;
+}
+
+// Walks the saved list newest-first and stops at the first network that joins.
+static bool connectWiFi() {
+
+    if (netCount == 0) return false;
+
+    WiFi.mode(apActive ? WIFI_AP_STA : WIFI_STA);
+
+    for (int i = 0; i < netCount; i++) {
+        showMessage("Connecting WiFi", netSsid[i].c_str(), C_LABEL);
+
+        if (tryConnect(netSsid[i], netPass[i], 15000)) {
+            Serial.print("IP: ");
+            Serial.println(WiFi.localIP());
+
+            configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// ---- setup hotspot + HTTP API -------------------------------------------
+
+static void startAP() {
+
+    if (apActive) return;
+
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    apActive = true;
+
+    Serial.printf("setup hotspot up: %s  http://%s/\n",
+                  AP_SSID, WiFi.softAPIP().toString().c_str());
+
+    showMessage("Setup mode", "join hotspot: " AP_SSID, C_OUT_RANGE);
+}
+
+static void stopAP() {
+
+    if (!apActive) return;
+
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    apActive = false;
+
+    Serial.println("setup hotspot down");
+}
+
+static void sendJson(int code, const String &body) {
+
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(code, "application/json", body);
+}
+
+// Never returns passwords - only which SSIDs are stored, plus current state.
+static void handleGetNetworks() {
+
+    JsonDocument doc;
+    doc["connected"] = WiFi.status() == WL_CONNECTED;
+    doc["current"]   = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "";
+    doc["ip"]        = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "";
+
+    JsonArray arr = doc["saved"].to<JsonArray>();
+    for (int i = 0; i < netCount; i++) arr.add(netSsid[i]);
+
+    String out;
+    serializeJson(doc, out);
+    sendJson(200, out);
+}
+
+static bool wantReconnect = false;
+
+static void handlePostNetwork() {
+
+    JsonDocument doc;
+    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+        sendJson(400, "{\"error\":\"bad json\"}");
         return;
     }
 
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
+    const String ssid = doc["ssid"] | "";
+    const String pass = doc["pass"] | "";
 
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    if (!ssid.length()) {
+        sendJson(400, "{\"error\":\"ssid required\"}");
+        return;
+    }
+
+    addNet(ssid, pass);
+    wantReconnect = true;                 // loop will try it without blocking here
+
+    sendJson(200, "{\"ok\":true}");
+}
+
+static void handleDeleteNetwork() {
+
+    // Prefer the ?ssid= query parameter: an HTTP DELETE with a body is awkward
+    // from Android's HttpURLConnection and not parsed by every client. Fall
+    // back to a JSON body if that is how the request came in.
+    String ssid = server.arg("ssid");
+
+    if (!ssid.length()) {
+        JsonDocument doc;
+        deserializeJson(doc, server.arg("plain"));
+        ssid = doc["ssid"] | "";
+    }
+
+    if (removeNet(ssid)) sendJson(200, "{\"ok\":true}");
+    else                 sendJson(404, "{\"error\":\"not found\"}");
+}
+
+static void handleScan() {
+
+    const int n = WiFi.scanNetworks();
+
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+
+    for (int i = 0; i < n; i++) arr.add(WiFi.SSID(i));
+
+    WiFi.scanDelete();
+
+    String out;
+    serializeJson(doc, out);
+    sendJson(200, out);
+}
+
+static void handleOptions() {
+
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+    server.send(204);
+}
+
+static void startServer() {
+
+    server.on("/api/networks", HTTP_GET,     handleGetNetworks);
+    server.on("/api/networks", HTTP_POST,    handlePostNetwork);
+    server.on("/api/networks", HTTP_DELETE,  handleDeleteNetwork);
+    server.on("/api/scan",     HTTP_GET,     handleScan);
+    server.onNotFound([]() {
+        if (server.method() == HTTP_OPTIONS) handleOptions();
+        else sendJson(404, "{\"error\":\"not found\"}");
+    });
+
+    server.begin();
+    Serial.println("HTTP API started");
+}
+
+static void startMdns() {
+
+    if (mdnsUp || WiFi.status() != WL_CONNECTED) return;
+
+    if (MDNS.begin(MDNS_HOST)) {
+        MDNS.addService("http", "tcp", 80);
+        mdnsUp = true;
+        Serial.printf("mDNS up: http://%s.local/\n", MDNS_HOST);
+    }
 }
 
 // ---------------------------------------------------------------- sketch
@@ -889,19 +1152,44 @@ void setup() {
 
     if (!touchCalibrated) calibrateTouch();
 
-    connectWiFi();
+    loadNets();
 
-    showMessage("Loading...", NULL, C_LABEL);
+    if (connectWiFi()) {
+        startMdns();
+    } else {
+        // No saved network reachable - come up as a hotspot so the phone can
+        // add one. The HTTP API runs in both modes.
+        startAP();
+    }
 
-    const FetchResult r = fetchReading(lastReading);
+    startServer();
 
-    if (r == FETCH_OK) refresh(lastReading);
-    else               showFetchError(r);
+    if (WiFi.status() == WL_CONNECTED) {
+        showMessage("Loading...", NULL, C_LABEL);
+
+        const FetchResult r = fetchReading(lastReading);
+
+        if (r == FETCH_OK) refresh(lastReading);
+        else               showFetchError(r);
+    }
 
     lastPollMs = millis();
 }
 
 void loop() {
+
+    server.handleClient();
+
+    // A network was just added from the app. Only act on it if we are not
+    // already online - if connected, it is simply stored for later roaming.
+    if (wantReconnect) {
+        wantReconnect = false;
+        if (WiFi.status() != WL_CONNECTED && connectWiFi()) {
+            stopAP();
+            startMdns();
+            lastPollMs = 0;               // fetch immediately on the next pass
+        }
+    }
 
     if (millis() - lastPollMs < (uint32_t)POLL_SECONDS * 1000) {
 
@@ -919,9 +1207,18 @@ void loop() {
     lastPollMs = millis();
 
     if (WiFi.status() != WL_CONNECTED) {
-        connectWiFi();
+        // Try the saved list again; if nothing joins, fall back to the setup
+        // hotspot so the app can still reach the device.
+        if (connectWiFi()) {
+            stopAP();
+            startMdns();
+        } else {
+            startAP();
+        }
         return;
     }
+
+    startMdns();                          // idempotent; ensures mDNS after a reconnect
 
     Reading fresh;
 
