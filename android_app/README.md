@@ -49,7 +49,7 @@ you create an empty project and drop them in.
 The app reaches the device two ways:
 
 - **Setup mode** — when the device cannot join any saved network it makes its
-  own hotspot `GlucoseSetup` (password `choose-your-own`). Join that hotspot on your
+  own hotspot `GlucoseSetup` (password: whatever you set as `AP_PASSWORD`). Join that hotspot on your
   phone, leave the address field as `192.168.4.1`, and use the app.
 - **Normal mode** — when the device is online on your WiFi, join that same WiFi
   on your phone. You would then put the device's IP (shown in the app when it is

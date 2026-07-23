@@ -155,7 +155,7 @@ your WiFi password and Nightscout token never reach version control.
 #define BG_URGENT_HIGH 250
 
 #define AP_SSID     "GlucoseSetup"     // setup-hotspot name...
-#define AP_PASSWORD "choose-your-own"      // ...and password (min 8 chars)
+#define AP_PASSWORD "choose-your-own"  // ...and password (min 8 chars)
 #define MDNS_HOST   "glucose"          // reachable at http://glucose.local
 ```
 
@@ -245,7 +245,7 @@ hotspot**.
 ### Flow
 
 1. When no saved network is found, the display shows **Setup mode** and starts
-   the hotspot **`GlucoseSetup`** (password `choose-your-own`).
+   the hotspot **`GlucoseSetup`** (password: the one you set as `AP_PASSWORD`).
 2. On your phone, join that hotspot, and **turn mobile data off** (a no-internet
    hotspot otherwise gets bypassed over cellular, the most common gotcha).
 3. Open the **Glucose WiFi** app (or a browser at `http://192.168.4.1`), and add
