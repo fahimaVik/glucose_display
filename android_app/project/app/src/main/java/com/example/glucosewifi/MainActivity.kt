@@ -1,7 +1,16 @@
 package com.example.glucosewifi
 
 import android.content.Intent
+import android.text.InputType
+import android.widget.FrameLayout
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
+import android.net.wifi.WifiNetworkSpecifier
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +49,11 @@ class MainActivity : AppCompatActivity() {
 
     private var selectedSsid = ""
 
+    // Set when we one-tap-join the device hotspot; device requests bind to it so
+    // they reach 192.168.4.1 even while the phone keeps its normal network.
+    private var deviceNetwork: Network? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     private lateinit var steps: Map<String, View>
     private lateinit var subtitle: TextView
     private lateinit var log: TextView
@@ -77,11 +91,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.nsCheck).setOnClickListener { checkNightscout() }
         findViewById<Button>(R.id.nsNext).setOnClickListener { show("connect") }
         findViewById<Button>(R.id.nsBack).setOnClickListener { goBack() }
+        findViewById<Button>(R.id.connectAuto).setOnClickListener { connectViaSpecifier() }
         findViewById<Button>(R.id.connectFind).setOnClickListener { findDevice() }
         findViewById<Button>(R.id.connectNext).setOnClickListener { show("wifi") }
         findViewById<Button>(R.id.connectBack).setOnClickListener { goBack() }
         findViewById<Button>(R.id.wifiScan).setOnClickListener { scanWifi() }
-        findViewById<Button>(R.id.wifiSend).setOnClickListener { provision() }
         findViewById<Button>(R.id.wifiBack).setOnClickListener { goBack() }
         findViewById<Button>(R.id.doneHome).setOnClickListener { show("home"); refreshHome() }
 
@@ -91,6 +105,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun show(step: String) {
         current = step
+        // Back on the home screen we no longer need the device hotspot; releasing
+        // it lets the phone's Wi-Fi return to normal.
+        if (step == "home") releaseNetwork()
         for ((k, v) in steps) v.visibility = if (k == step) View.VISIBLE else View.GONE
         subtitle.text = if (step == "home") "Manage your display" else "Setting up your display"
         setLog("")
@@ -140,12 +157,17 @@ class MainActivity : AppCompatActivity() {
 
     // --- networking ---------------------------------------------------------
 
-    private fun http(method: String, url: String, body: String?, done: (Int, String) -> Unit) {
+    // bound=true routes the request through the one-tap hotspot network when we
+    // have one; Nightscout calls pass bound=false so they use normal internet.
+    private fun http(method: String, url: String, body: String?, bound: Boolean = true,
+                     done: (Int, String) -> Unit) {
         Thread {
             var code = -1
             var resp = ""
             try {
-                val c = URL(url).openConnection() as HttpURLConnection
+                val net = if (bound) deviceNetwork else null
+                val c = (net?.openConnection(URL(url)) ?: URL(url).openConnection())
+                        as HttpURLConnection
                 c.requestMethod = method
                 c.connectTimeout = 6000
                 c.readTimeout = 12000        // Northflank can be slow to wake
@@ -199,7 +221,7 @@ class MainActivity : AppCompatActivity() {
         val tokenEnc = URLEncoder.encode(token, "UTF-8")
         // status.json gives units + thresholds + title; entries confirms the
         // token can actually read glucose (the real device operation).
-        http("GET", "https://$host/api/v1/status.json?token=$tokenEnc", null) { sCode, sBody ->
+        http("GET", "https://$host/api/v1/status.json?token=$tokenEnc", null, bound = false) { sCode, sBody ->
             if (sCode != 200) {
                 nsError(if (sCode < 0) "Site not reachable — check the URL."
                         else "Nightscout returned HTTP $sCode.")
@@ -225,7 +247,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) { /* keep defaults */ }
 
             // now confirm the token reads glucose
-            http("GET", "https://$host/api/v1/entries.json?count=1&token=$tokenEnc", null) { eCode, eBody ->
+            http("GET", "https://$host/api/v1/entries.json?count=1&token=$tokenEnc", null, bound = false) { eCode, eBody ->
                 if (eCode == 401 || eCode == 403) { nsError("Token rejected — check the token."); return@http }
                 if (eCode != 200) { nsError("Could not read glucose (HTTP $eCode)."); return@http }
 
@@ -251,6 +273,71 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- Step 2: connect to device -----------------------------------------
+
+    // One-tap: ask Android to join GlucoseSetup. It shows a system "Connect?"
+    // prompt; on approval we bind device requests to that network. The phone's
+    // normal network is untouched, and it returns automatically when released.
+    private fun connectViaSpecifier() {
+        val pass = findViewById<EditText>(R.id.apPass).text.toString()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            Toast.makeText(this, "This Android is too old for one-tap connect — join GlucoseSetup manually below.",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        if (pass.length < 8) {
+            Toast.makeText(this, "Enter the hotspot password first (8+ characters).", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        statusCard(R.id.connectStatusCard, R.id.connectStatus, R.color.neutral_bg, R.color.neutral_fg,
+            "Asking to connect to GlucoseSetup — approve the prompt…")
+
+        val specifier = WifiNetworkSpecifier.Builder()
+            .setSsid("GlucoseSetup")
+            .setWpa2Passphrase(pass)
+            .build()
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .setNetworkSpecifier(specifier)
+            .build()
+
+        releaseNetwork()
+        val cm = getSystemService(ConnectivityManager::class.java)
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                deviceNetwork = network
+                main.post {
+                    statusCard(R.id.connectStatusCard, R.id.connectStatus,
+                        R.color.ok_bg, R.color.ok_fg, "Connected to GlucoseSetup. Checking display…")
+                    findDevice()
+                }
+            }
+            override fun onUnavailable() {
+                main.post {
+                    statusCard(R.id.connectStatusCard, R.id.connectStatus,
+                        R.color.err_bg, R.color.err_fg,
+                        "Couldn't connect automatically. Join GlucoseSetup manually below.")
+                }
+            }
+            override fun onLost(network: Network) { deviceNetwork = null }
+        }
+        cm.requestNetwork(request, networkCallback!!)
+    }
+
+    private fun releaseNetwork() {
+        networkCallback?.let {
+            try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
+            catch (e: Exception) {}
+        }
+        networkCallback = null
+        deviceNetwork = null
+    }
+
+    override fun onDestroy() {
+        releaseNetwork()
+        super.onDestroy()
+    }
 
     private fun findDevice() {
         statusCard(R.id.connectStatusCard, R.id.connectStatus, R.color.neutral_bg, R.color.neutral_fg,
@@ -288,7 +375,6 @@ class MainActivity : AppCompatActivity() {
                 row.setBackgroundColor(col(R.color.row_bg))
                 row.setTextColor(col(R.color.neutral_fg))
                 row.setOnClickListener {
-                    selectedSsid = ssid
                     for (j in 0 until list.childCount) {
                         val v = list.getChildAt(j) as TextView
                         v.setBackgroundColor(col(R.color.row_bg))
@@ -296,6 +382,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     row.setBackgroundColor(col(R.color.row_sel))
                     row.setTextColor(col(R.color.row_sel_text))
+                    askPasswordAndProvision(ssid)
                 }
                 val lp = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -307,11 +394,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun provision() {
+    // Tapping a network opens a small password dialog, so the field is never
+    // buried below a long list.
+    private fun askPasswordAndProvision(ssid: String) {
+        val input = EditText(this)
+        input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        input.hint = "Password"
+
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this)
+        box.setPadding(pad, pad / 2, pad, 0)
+        box.addView(input)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Connect to $ssid")
+            .setView(box)
+            .setPositiveButton("Send setup") { _, _ ->
+                selectedSsid = ssid
+                provision(input.text.toString())
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun provision(pass: String) {
         if (selectedSsid.isEmpty()) { setLog("Pick a Wi-Fi network first."); return }
         if (nsHost.isEmpty()) { setLog("Nightscout not validated — go back to Step 1."); return }
 
-        val pass = findViewById<EditText>(R.id.wifiPass).text.toString()
         val body = JSONObject()
             .put("wifi_ssid", selectedSsid)
             .put("wifi_pass", pass)
@@ -322,14 +431,19 @@ class MainActivity : AppCompatActivity() {
 
         show("sending")
         http("POST", deviceBase() + "/api/provision", body.toString()) { code, resp ->
-            if (code != 200) {
+            // A positive non-200 is a real rejection from the device. A code <= 0
+            // means the connection dropped — usually because the device switched
+            // networks right after receiving the config, so the setup very likely
+            // went through. Confirm rather than fail.
+            if (code > 0 && code != 200) {
                 findViewById<TextView>(R.id.sendStatus).text = "Setup failed (HTTP $code): $resp"
                 return@http
             }
+            // Config delivered — drop the hotspot so the phone rejoins its normal
+            // Wi-Fi, which is also how the confirmation check reaches the device.
+            releaseNetwork()
             findViewById<TextView>(R.id.sendStatus).text =
-                "Sent. The display is joining $selectedSsid and Nightscout.\n" +
-                "Reconnect your phone to your home Wi-Fi, then tap below."
-            // Give the device time to switch, then move to confirmation.
+                "Sent. The display is joining $selectedSsid and Nightscout…"
             main.postDelayed({ show("done"); confirm() }, 6000)
         }
     }

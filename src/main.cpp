@@ -1098,7 +1098,8 @@ static void handleGetNetworks() {
     sendJson(200, out);
 }
 
-static bool wantReconnect = false;
+static bool     wantReconnect   = false;
+static uint32_t wantReconnectAt = 0;
 
 static void handlePostNetwork() {
 
@@ -1118,6 +1119,7 @@ static void handlePostNetwork() {
 
     addNet(ssid, pass);
     wantReconnect = true;                 // loop will try it without blocking here
+    wantReconnectAt = millis();
 
     sendJson(200, "{\"ok\":true}");
 }
@@ -1245,18 +1247,33 @@ static void handleProvision() {
     if (ssid.length()) addNet(ssid, pass);
 
     wantReconnect = true;   // loop connects, closes the hotspot, and refetches
+    wantReconnectAt = millis();   // grace period so the 200 reaches the app first
     Serial.println("provisioned via app");
+    sendJson(200, "{\"ok\":true}");
+}
+
+// Puts a working device back into setup mode: clears the Nightscout config so
+// the hotspot comes up and the app can provision it again. WiFi is kept so the
+// device stays reachable on the LAN meanwhile. This is the app's "reconfigure".
+static void handleReconfigure() {
+    prefs.remove("ns_host");
+    prefs.remove("ns_token");
+    nsHost = ""; nsToken = "";
+    lastReading.valid = false;
+    lastPollMs = 0;
+    Serial.println("reconfigure: cleared Nightscout, entering setup mode");
     sendJson(200, "{\"ok\":true}");
 }
 
 static void startServer() {
 
-    server.on("/api/networks",  HTTP_GET,     handleGetNetworks);
-    server.on("/api/networks",  HTTP_POST,    handlePostNetwork);
-    server.on("/api/networks",  HTTP_DELETE,  handleDeleteNetwork);
-    server.on("/api/scan",      HTTP_GET,     handleScan);
-    server.on("/api/status",    HTTP_GET,     handleStatus);
-    server.on("/api/provision", HTTP_POST,    handleProvision);
+    server.on("/api/networks",    HTTP_GET,   handleGetNetworks);
+    server.on("/api/networks",    HTTP_POST,  handlePostNetwork);
+    server.on("/api/networks",    HTTP_DELETE, handleDeleteNetwork);
+    server.on("/api/scan",        HTTP_GET,   handleScan);
+    server.on("/api/status",      HTTP_GET,   handleStatus);
+    server.on("/api/provision",   HTTP_POST,  handleProvision);
+    server.on("/api/reconfigure", HTTP_POST,  handleReconfigure);
     server.onNotFound([]() {
         if (server.method() == HTTP_OPTIONS) handleOptions();
         else sendJson(404, "{\"error\":\"not found\"}");
@@ -1344,7 +1361,10 @@ void loop() {
     // Provisioning (or a network add) just happened. Connect if needed, and
     // once the device is both online and configured, close the setup hotspot
     // and fetch straight away.
-    if (wantReconnect) {
+    // A short grace period after provisioning: let the HTTP 200 reach the app
+    // before the hotspot is torn down, otherwise the app sees the connection
+    // abort even though the device was configured fine.
+    if (wantReconnect && millis() - wantReconnectAt > 2000) {
         wantReconnect = false;
         if (WiFi.status() != WL_CONNECTED) connectWiFi();
         if (WiFi.status() == WL_CONNECTED && nsConfigured()) {

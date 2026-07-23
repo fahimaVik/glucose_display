@@ -125,9 +125,28 @@
                 android:textAppearance="?attr/textAppearanceTitleMedium"
                 android:textColor="?attr/colorPrimary" />
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Join the Wi-Fi network GlucoseSetup on your phone and turn mobile data OFF, then find the device."
+                android:text="Connect to the display's setup hotspot to send it your settings."
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" android:paddingBottom="14dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                app:passwordToggleEnabled="true" android:hint="Hotspot password">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/apPass"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="textPassword" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/connectAuto"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Connect to GlucoseSetup" app:icon="@android:drawable/stat_sys_data_bluetooth" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="— or join GlucoseSetup manually in your Wi-Fi settings (mobile data off) —"
+                android:textAppearance="?attr/textAppearanceLabelSmall" android:gravity="center"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:paddingTop="14dp" android:paddingBottom="6dp" />
 
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -175,22 +194,16 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Scan networks the display can see" />
 
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Tap your network to enter its password."
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:paddingTop="8dp" android:paddingBottom="2dp" />
+
             <LinearLayout android:id="@+id/wifiList"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="vertical" android:paddingTop="6dp" android:paddingBottom="6dp" />
+                android:orientation="vertical" android:paddingTop="4dp" android:paddingBottom="6dp" />
 
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                app:passwordToggleEnabled="true" android:hint="Wi-Fi password">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/wifiPass"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="textPassword" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.button.MaterialButton android:id="@+id/wifiSend"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="6dp" android:text="Send setup" />
             <com.google.android.material.button.MaterialButton android:id="@+id/wifiBack"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
