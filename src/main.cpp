@@ -37,7 +37,8 @@ enum FetchResult {
     FETCH_TLS,      // could not establish a verified connection
     FETCH_AUTH,     // 401/403 - token rejected
     FETCH_HTTP,     // any other non-200
-    FETCH_DATA      // connected fine, but the payload was unusable
+    FETCH_DATA,     // connected fine, but the payload was unusable
+    FETCH_NO_CONFIG // no Nightscout host/token set yet (needs provisioning)
 };
 
 // ---- palette ------------------------------------------------------------
@@ -152,18 +153,75 @@ static int    shownAge      = -9999;
 static Band   shownFaceBand = BAND_OK;
 static bool   shownFaceOn   = false;
 
+// ---- runtime Nightscout config (V2) -------------------------------------
+// Nightscout host/token, units and colour thresholds now live in NVS instead
+// of being compiled in. config.h only SEEDS them on first boot, so a generic
+// firmware image (empty config.h) comes up unprovisioned and waits for the
+// phone app. After that NVS is authoritative and config.h is ignored.
+
+static String       nsHost, nsToken;
+static int          useMmol      = 0;
+static int          bgUrgentLow  = 55;
+static int          bgLow        = 80;
+static int          bgHigh       = 180;
+static int          bgUrgentHigh = 250;
+static FetchResult  lastResult   = FETCH_NO_CONFIG;   // reported by /api/status
+
+static bool nsConfigured() { return nsHost.length() > 0 && nsToken.length() > 0; }
+
+// Accept either a bare host or a full pasted URL, and keep only the host[:port].
+static String normalizeHost(String h) {
+
+    h.trim();
+    if (h.startsWith("https://")) h = h.substring(8);
+    else if (h.startsWith("http://")) h = h.substring(7);
+
+    const int slash = h.indexOf('/');       // drop any path/query
+    if (slash >= 0) h = h.substring(0, slash);
+
+    return h;
+}
+
+static void loadNsConfig() {
+
+    if (!prefs.getBool("ns_seeded", false)) {
+        prefs.putString("ns_host",  normalizeHost(NS_HOST));
+        prefs.putString("ns_token", NS_TOKEN);
+        prefs.putInt("units",   USE_MMOL);
+        prefs.putInt("bg_ulow", BG_URGENT_LOW);
+        prefs.putInt("bg_low",  BG_LOW);
+        prefs.putInt("bg_high", BG_HIGH);
+        prefs.putInt("bg_uhigh", BG_URGENT_HIGH);
+        prefs.putBool("ns_seeded", true);
+        Serial.println("seeded Nightscout config from config.h");
+    }
+
+    nsHost       = prefs.getString("ns_host", "");
+    nsToken      = prefs.getString("ns_token", "");
+    useMmol      = prefs.getInt("units",   0);
+    bgUrgentLow  = prefs.getInt("bg_ulow",  55);
+    bgLow        = prefs.getInt("bg_low",   80);
+    bgHigh       = prefs.getInt("bg_high",  180);
+    bgUrgentHigh = prefs.getInt("bg_uhigh", 250);
+
+    Serial.printf("Nightscout: host=%s token=%s units=%d bands=%d/%d/%d/%d\n",
+                  nsHost.length() ? nsHost.c_str() : "(none)",
+                  nsToken.length() ? "set" : "(none)",
+                  useMmol, bgUrgentLow, bgLow, bgHigh, bgUrgentHigh);
+}
+
 // ---------------------------------------------------------------- helpers
 
 static Band bandFor(int sgv) {
 
-    if (sgv < BG_LOW)  return BAND_LOW;
-    if (sgv > BG_HIGH) return BAND_HIGH;
+    if (sgv < bgLow)  return BAND_LOW;
+    if (sgv > bgHigh) return BAND_HIGH;
 
     return BAND_OK;
 }
 
 static bool isUrgent(int sgv) {
-    return sgv <= BG_URGENT_LOW || sgv >= BG_URGENT_HIGH;
+    return sgv <= bgUrgentLow || sgv >= bgUrgentHigh;
 }
 
 static uint16_t colourFor(int sgv) {
@@ -177,13 +235,12 @@ static uint16_t colourFor(int sgv) {
 // Nightscout stores mg/dL; convert only for display.
 static String formatValue(int sgv) {
 
-#if USE_MMOL
-    char buf[8];
-    dtostrf(sgv / 18.0, 0, 1, buf);
-    return String(buf);
-#else
+    if (useMmol) {
+        char buf[8];
+        dtostrf(sgv / 18.0, 0, 1, buf);
+        return String(buf);
+    }
     return String(sgv);
-#endif
 }
 
 static int minutesAgo(int64_t dateMs) {
@@ -291,8 +348,8 @@ static void drawGraph() {
 
     tft.fillRect(GRAPH_X, GRAPH_Y, GRAPH_W, GRAPH_H, C_BG);
 
-    const int yHigh = graphY(BG_HIGH);
-    const int yLow  = graphY(BG_LOW);
+    const int yHigh = graphY(bgHigh);
+    const int yLow  = graphY(bgLow);
 
     tft.fillRect(GRAPH_X, yHigh, GRAPH_W, yLow - yHigh + 1, C_GRAPH_BAND);
 
@@ -355,7 +412,7 @@ static void drawChrome() {
 
     tft.setTextDatum(TL_DATUM);
     tft.setTextColor(C_LABEL, C_BG);
-    tft.drawString(USE_MMOL ? "mmol/L" : "mg/dL", 12, 10, 2);
+    tft.drawString(useMmol ? "mmol/L" : "mg/dL", 12, 10, 2);
 
     drawDaisy(DAISY_CX, DAISY_CY);
     drawGraphButton();
@@ -718,6 +775,7 @@ static int lastHttpCode = 0;
 static FetchResult fetchReading(Reading &out) {
 
     if (WiFi.status() != WL_CONNECTED) return FETCH_NO_WIFI;
+    if (!nsConfigured())               return FETCH_NO_CONFIG;
 
     WiFiClientSecure client;
 
@@ -729,7 +787,7 @@ static FetchResult fetchReading(Reading &out) {
     // The token goes in a header rather than the query string, so it does not
     // end up in Northflank's access logs. Verified against this instance:
     // api-secret works, Authorization: Bearer does not.
-    String url = String("https://") + NS_HOST +
+    String url = String("https://") + nsHost +
                  "/api/v1/entries.json?count=" + String(GRAPH_MAX_PTS);
 
     if (!http.begin(client, url)) {
@@ -737,7 +795,7 @@ static FetchResult fetchReading(Reading &out) {
         return FETCH_TLS;
     }
 
-    http.addHeader("api-secret", NS_TOKEN);
+    http.addHeader("api-secret", nsToken);
 
     const int code = http.GET();
     lastHttpCode = code;
@@ -817,7 +875,10 @@ static void showFetchError(FetchResult r) {
             showMessage("Secure connect", "certificate not trusted", C_URGENT);
             break;
         case FETCH_AUTH:
-            showMessage("Auth failed", "check NS_TOKEN", C_URGENT);
+            showMessage("Auth failed", "re-enter token in the app", C_URGENT);
+            break;
+        case FETCH_NO_CONFIG:
+            showMessage("Set up needed", "add Nightscout in the app", C_OUT_RANGE);
             break;
         case FETCH_HTTP:
             snprintf(detail, sizeof(detail), "HTTP %d", lastHttpCode);
@@ -991,8 +1052,17 @@ static void startAP() {
 
     Serial.printf("setup hotspot up: %s  http://%s/\n",
                   AP_SSID, WiFi.softAPIP().toString().c_str());
+    // The caller draws the appropriate setup screen (showSetupNeeded).
+}
 
-    showMessage("Setup mode", "join hotspot: " AP_SSID, C_OUT_RANGE);
+// The screen shown whenever the device cannot yet display a reading, telling
+// the user to finish setup from the phone app.
+static void showSetupNeeded() {
+
+    if (!nsConfigured())
+        showMessage("Set up needed", "open the app to add Nightscout", C_OUT_RANGE);
+    else
+        showMessage("No WiFi", "open the app to add a network", C_OUT_RANGE);
 }
 
 static void stopAP() {
@@ -1093,12 +1163,100 @@ static void handleOptions() {
     server.send(204);
 }
 
+static const char *fetchResultName(FetchResult r) {
+
+    switch (r) {
+        case FETCH_OK:        return "ok";
+        case FETCH_NO_WIFI:   return "no_wifi";
+        case FETCH_TLS:       return "tls_error";
+        case FETCH_AUTH:      return "auth_failed";
+        case FETCH_HTTP:      return "http_error";
+        case FETCH_DATA:      return "no_data";
+        case FETCH_NO_CONFIG: return "not_configured";
+    }
+    return "unknown";
+}
+
+// Everything the app needs to render its status/confirmation screen. The token
+// is never returned; the host is not secret and lets the app confirm the site.
+static void handleStatus() {
+
+    const bool conn = WiFi.status() == WL_CONNECTED;
+
+    JsonDocument doc;
+    doc["connected"]   = conn;
+    doc["ssid"]        = conn ? WiFi.SSID() : "";
+    doc["ip"]          = conn ? WiFi.localIP().toString() : "";
+    doc["ap_mode"]     = apActive;
+    doc["provisioned"] = nsConfigured();
+    doc["ns_host"]     = nsHost;
+    doc["units"]       = useMmol;
+    doc["last_result"] = fetchResultName(lastResult);
+
+    JsonObject th = doc["thresholds"].to<JsonObject>();
+    th["urgent_low"]  = bgUrgentLow;
+    th["low"]         = bgLow;
+    th["high"]        = bgHigh;
+    th["urgent_high"] = bgUrgentHigh;
+
+    if (lastReading.valid) {
+        doc["last_sgv"]     = lastReading.sgv;
+        doc["last_age_min"] = minutesAgo(lastReading.dateMs);
+    }
+
+    String out;
+    serializeJson(doc, out);
+    sendJson(200, out);
+}
+
+// One call to provision the device: WiFi + Nightscout + units + thresholds.
+// Only accepted while in setup-hotspot mode; once set up, config is read-only.
+static void handleProvision() {
+
+    if (!apActive) {
+        sendJson(403, "{\"error\":\"locked; device already set up\"}");
+        return;
+    }
+
+    JsonDocument doc;
+    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+        sendJson(400, "{\"error\":\"bad json\"}");
+        return;
+    }
+
+    const String url = doc["ns_url"]   | "";
+    const String tok = doc["ns_token"] | "";
+
+    if (url.length()) { nsHost  = normalizeHost(url); prefs.putString("ns_host",  nsHost);  }
+    if (tok.length()) { nsToken = tok;                prefs.putString("ns_token", nsToken); }
+
+    if (doc["units"].is<int>()) { useMmol = doc["units"]; prefs.putInt("units", useMmol); }
+
+    if (doc["thresholds"].is<JsonObject>()) {
+        JsonObject t = doc["thresholds"];
+        if (t["urgent_low"].is<int>())  { bgUrgentLow  = t["urgent_low"];  prefs.putInt("bg_ulow",  bgUrgentLow);  }
+        if (t["low"].is<int>())         { bgLow        = t["low"];         prefs.putInt("bg_low",   bgLow);        }
+        if (t["high"].is<int>())        { bgHigh       = t["high"];        prefs.putInt("bg_high",  bgHigh);       }
+        if (t["urgent_high"].is<int>()) { bgUrgentHigh = t["urgent_high"]; prefs.putInt("bg_uhigh", bgUrgentHigh); }
+    }
+
+    const String ssid = doc["wifi_ssid"] | "";
+    const String pass = doc["wifi_pass"] | "";
+    if (ssid.length()) addNet(ssid, pass);
+
+    wantReconnect = true;   // loop connects, closes the hotspot, and refetches
+    Serial.println("provisioned via app");
+    sendJson(200, "{\"ok\":true}");
+}
+
 static void startServer() {
 
-    server.on("/api/networks", HTTP_GET,     handleGetNetworks);
-    server.on("/api/networks", HTTP_POST,    handlePostNetwork);
-    server.on("/api/networks", HTTP_DELETE,  handleDeleteNetwork);
-    server.on("/api/scan",     HTTP_GET,     handleScan);
+    server.on("/api/networks",  HTTP_GET,     handleGetNetworks);
+    server.on("/api/networks",  HTTP_POST,    handlePostNetwork);
+    server.on("/api/networks",  HTTP_DELETE,  handleDeleteNetwork);
+    server.on("/api/scan",      HTTP_GET,     handleScan);
+    server.on("/api/status",    HTTP_GET,     handleStatus);
+    server.on("/api/provision", HTTP_POST,    handleProvision);
     server.onNotFound([]() {
         if (server.method() == HTTP_OPTIONS) handleOptions();
         else sendJson(404, "{\"error\":\"not found\"}");
@@ -1153,24 +1311,27 @@ void setup() {
     if (!touchCalibrated) calibrateTouch();
 
     loadNets();
+    loadNsConfig();
 
-    if (connectWiFi()) {
-        startMdns();
-    } else {
-        // No saved network reachable - come up as a hotspot so the phone can
-        // add one. The HTTP API runs in both modes.
-        startAP();
-    }
+    const bool wifi = connectWiFi();
+    if (wifi) startMdns();
+
+    // Bring up the setup hotspot whenever the device is not fully ready (no
+    // network joined, or no Nightscout config), so the phone app can provision
+    // it. The HTTP API runs in every mode.
+    if (!wifi || !nsConfigured()) startAP();
 
     startServer();
 
-    if (WiFi.status() == WL_CONNECTED) {
+    if (wifi && nsConfigured()) {
         showMessage("Loading...", NULL, C_LABEL);
+        lastResult = fetchReading(lastReading);
 
-        const FetchResult r = fetchReading(lastReading);
-
-        if (r == FETCH_OK) refresh(lastReading);
-        else               showFetchError(r);
+        if (lastResult == FETCH_OK) refresh(lastReading);
+        else                        showFetchError(lastResult);
+    } else {
+        lastResult = FETCH_NO_CONFIG;
+        showSetupNeeded();
     }
 
     lastPollMs = millis();
@@ -1180,13 +1341,15 @@ void loop() {
 
     server.handleClient();
 
-    // A network was just added from the app. Only act on it if we are not
-    // already online - if connected, it is simply stored for later roaming.
+    // Provisioning (or a network add) just happened. Connect if needed, and
+    // once the device is both online and configured, close the setup hotspot
+    // and fetch straight away.
     if (wantReconnect) {
         wantReconnect = false;
-        if (WiFi.status() != WL_CONNECTED && connectWiFi()) {
-            stopAP();
+        if (WiFi.status() != WL_CONNECTED) connectWiFi();
+        if (WiFi.status() == WL_CONNECTED && nsConfigured()) {
             startMdns();
+            stopAP();
             lastPollMs = 0;               // fetch immediately on the next pass
         }
     }
@@ -1209,22 +1372,30 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) {
         // Try the saved list again; if nothing joins, fall back to the setup
         // hotspot so the app can still reach the device.
-        if (connectWiFi()) {
+        if (connectWiFi() && nsConfigured()) {
             stopAP();
             startMdns();
         } else {
             startAP();
+            showSetupNeeded();
         }
         return;
     }
 
     startMdns();                          // idempotent; ensures mDNS after a reconnect
 
+    // Connected but no Nightscout yet: keep the hotspot up for the app and wait.
+    if (!nsConfigured()) {
+        if (!apActive) startAP();
+        showSetupNeeded();
+        return;
+    }
+
     Reading fresh;
 
-    const FetchResult r = fetchReading(fresh);
+    lastResult = fetchReading(fresh);
 
-    if (r == FETCH_OK) {
+    if (lastResult == FETCH_OK) {
         lastReading = fresh;
         refresh(lastReading);
         return;
@@ -1234,6 +1405,6 @@ void loop() {
     // is the honest signal there. But once that reading is too old to act on,
     // stop showing a number at all and say what is actually wrong instead.
     if (!lastReading.valid || minutesAgo(lastReading.dateMs) > 15) {
-        showFetchError(r);
+        showFetchError(lastResult);
     }
 }
